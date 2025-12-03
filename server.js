@@ -1,57 +1,96 @@
 const express = require("express");
 const net = require("net");
 const bodyParser = require("body-parser");
+const escpos = require("escpos");
+escpos.USB = require("escpos-usb");
 
 const app = express();
-const PORT = 3000;
-const TIMEOUT_MS = 5000; 
-
-// Middleware parse json requests
 app.use(bodyParser.json());
 
-// Endpoint to receive the print job from Railway
-app.post("/print-receipt", (req, res) => {
-  const { printerIP, port, escPosContent } = req.body;
+const PORT = 3000;
+const TIMEOUT_MS = 4000;
 
-  if (!escPosContent || !printerIP || !port) {
-    return res.status(400).send({ message: "Faltan datos de impresión." });
-  }
-
-  // 1. Start TCP/IP connection to the printer
-  const client = net.createConnection(
-    { host: printerIP, port: port, timeout: TIMEOUT_MS },
-    () => {
-      // 2. Use 'latin1' (or 'binary') to map the ESC/POS string to bytes
-      const data = Buffer.from(escPosContent, "latin1");
-
+// ---------------------------
+// PRINT VIA TCP (LAN)
+// ---------------------------
+function printTCP(printerIP, port, data) {
+  return new Promise((resolve, reject) => {
+    const client = net.createConnection({ host: printerIP, port }, () => {
       client.write(data, () => {
-        client.end(); // Close connection
-        res.send({
-          success: true,
-          message: "Print sent to local proxy.",
-        });
+        client.end();
+        resolve(true);
       });
+    });
+
+    client.setTimeout(TIMEOUT_MS);
+
+    client.on("timeout", () => {
+      client.destroy();
+      reject(new Error("TCP timeout: printer not responding"));
+    });
+
+    client.on("error", reject);
+  });
+}
+
+// ---------------------------
+// PRINT VIA USB
+// ---------------------------
+function printUSB(data) {
+  return new Promise((resolve, reject) => {
+    let device;
+
+    try {
+      device = new escpos.USB();
+    } catch (err) {
+      return reject(new Error("No USB printer found"));
     }
-  );
 
-  client.on("error", (err) => {
-    console.error(`Error TCP: ${err.message}`);
-    res
-      .status(500)
-      .send({
-        success: false,
-        message: `Error connecting to the printer: ${err.message}`,
-      });
-  });
+    const printer = new escpos.Printer(device);
 
-  client.on("timeout", () => {
-    client.destroy();
-    res
-      .status(500)
-      .send({ success: false, message: "TCP connection timeout." });
+    device.open(function (err) {
+      if (err) return reject(err);
+
+      printer
+        .raw(data)
+        .cut()
+        .close(() => resolve(true));
+    });
   });
+}
+
+// ---------------------------
+// API ROUTE
+// ---------------------------
+app.post("/print-receipt", async (req, res) => {
+  const { escPosContent, printerIP, port, mode } = req.body;
+
+  if (!escPosContent)
+    return res
+      .status(400)
+      .send({ success: false, message: "Missing ESC/POS data" });
+
+  const bytes = Buffer.from(escPosContent, "base64");
+
+  try {
+    if (mode === "USB") {
+      await printUSB(bytes);
+    } else {
+      if (!printerIP || !port)
+        return res
+          .status(400)
+          .send({ success: false, message: "Missing TCP printer IP/port" });
+
+      await printTCP(printerIP, port, bytes);
+    }
+
+    return res.send({ success: true, message: "Printed OK" });
+  } catch (err) {
+    console.error("Error printing:", err);
+    return res.status(500).send({ success: false, message: err.message });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log(`Local proxy running on http://localhost:${PORT}`);
+  console.log(`Local Printer Proxy Ready → port ${PORT}`);
 });
