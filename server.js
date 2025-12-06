@@ -13,7 +13,10 @@ const TIMEOUT_MS = 4000;
 
 // Init cors
 const corsOptions = {
-  origin: "http://localhost:4200",
+  origin: [
+    "http://localhost:4200",
+    "https://est-core-one-frontend-4krz.vercel.app",
+  ],
   methods: ["POST", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
