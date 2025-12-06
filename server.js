@@ -1,4 +1,5 @@
 const express = require("express");
+const cors = require("cors");
 const net = require("net");
 const bodyParser = require("body-parser");
 const escpos = require("escpos");
@@ -10,9 +11,21 @@ app.use(bodyParser.json());
 const PORT = 3000;
 const TIMEOUT_MS = 4000;
 
-// ---------------------------
-// PRINT VIA TCP (LAN)
-// ---------------------------
+// Init cors
+const corsOptions = {
+  origin: "http://localhost:4200",
+  methods: ["POST", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-user-code",
+    "x-company-code",
+  ],
+};
+app.use(cors(corsOptions));
+app.use(bodyParser.json());
+
+// Print via TCP - LAN
 function printTCP(printerIP, port, data) {
   return new Promise((resolve, reject) => {
     const client = net.createConnection({ host: printerIP, port }, () => {
@@ -33,9 +46,7 @@ function printTCP(printerIP, port, data) {
   });
 }
 
-// ---------------------------
-// PRINT VIA USB
-// ---------------------------
+// Print by usb
 function printUSB(data) {
   return new Promise((resolve, reject) => {
     let device;
@@ -59,9 +70,7 @@ function printUSB(data) {
   });
 }
 
-// ---------------------------
-// API ROUTE
-// ---------------------------
+// Main api
 app.post("/print-receipt", async (req, res) => {
   const { escPosContent, printerIP, port, mode } = req.body;
 
@@ -69,9 +78,7 @@ app.post("/print-receipt", async (req, res) => {
     return res
       .status(400)
       .send({ success: false, message: "Missing ESC/POS data" });
-
   const bytes = Buffer.from(escPosContent, "base64");
-
   try {
     if (mode === "USB") {
       await printUSB(bytes);
@@ -80,10 +87,8 @@ app.post("/print-receipt", async (req, res) => {
         return res
           .status(400)
           .send({ success: false, message: "Missing TCP printer IP/port" });
-
       await printTCP(printerIP, port, bytes);
     }
-
     return res.send({ success: true, message: "Printed OK" });
   } catch (err) {
     console.error("Error printing:", err);
