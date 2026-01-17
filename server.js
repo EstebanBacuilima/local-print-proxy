@@ -25,6 +25,10 @@ const corsOptions = {
     "x-company-code",
   ],
 };
+
+// Open drawer
+const OPEN_DRAWER_COMMAND = Buffer.from([0x1b, 0x70, 0x00, 0x40, 0x50]);
+
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
@@ -73,6 +77,31 @@ function printUSB(data) {
   });
 }
 
+function sendTCP(host, port, data) {
+  return new Promise((resolve, reject) => {
+    const client = new net.Socket();
+
+    // Timeout 5 seconds
+    client.setTimeout(5000);
+
+    client.connect(port, host, () => {
+      client.write(data);
+      client.end();
+      resolve();
+    });
+
+    client.on('error', (err) => {
+      client.destroy();
+      reject(err);
+    });
+
+    client.on('timeout', () => {
+      client.destroy();
+      reject(new Error('Timeout connecting to printer'));
+    });
+  });
+}
+
 // Main api
 app.post("/print-receipt", async (req, res) => {
   const { escPosContent, printerIP, port, mode } = req.body;
@@ -95,6 +124,24 @@ app.post("/print-receipt", async (req, res) => {
     return res.send({ success: true, message: "Printed OK" });
   } catch (err) {
     console.error("Error printing:", err);
+    return res.status(500).send({ success: false, message: err.message });
+  }
+});
+
+app.post("/open-drawer", async (req, res) => {
+  const { printerIP, port, mode } = req.body;
+  try {
+    if (mode === "USB") {
+      await sendUSB(OPEN_DRAWER_COMMAND);
+    } else {
+      if (!printerIP || !port) {
+        return res.status(400).send({ success: false, message: "Missing TCP printer IP/port" });
+      }
+      await sendTCP(printerIP, port, OPEN_DRAWER_COMMAND);
+    }
+    return res.send({ success: true, message: "Drawer opened" });
+  } catch (err) {
+    console.error("Error opening drawer:", err);
     return res.status(500).send({ success: false, message: err.message });
   }
 });
