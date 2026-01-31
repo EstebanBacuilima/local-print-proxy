@@ -1,12 +1,15 @@
-const express = require("express");
-const cors = require("cors");
-const net = require("net");
-const bodyParser = require("body-parser");
-const escpos = require("escpos");
-escpos.USB = require("escpos-usb");
+import express from "express";
+import cors from "cors";
+import { createConnection, Socket } from "node:net";
+import { json } from "body-parser";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+
+import { Printer } from "escpos";
+const USB = require("escpos-usb");
 
 const app = express();
-app.use(bodyParser.json());
+app.use(json());
 
 const PORT = 3000;
 const TIMEOUT_MS = 4000;
@@ -30,12 +33,12 @@ const corsOptions = {
 const OPEN_DRAWER_COMMAND = Buffer.from([0x1b, 0x70, 0x00, 0x40, 0x50]);
 
 app.use(cors(corsOptions));
-app.use(bodyParser.json());
+app.use(json());
 
 // Print via TCP - LAN
 function printTCP(printerIP, port, data) {
   return new Promise((resolve, reject) => {
-    const client = net.createConnection({ host: printerIP, port }, () => {
+    const client = createConnection({ host: printerIP, port }, () => {
       client.write(data, () => {
         client.end();
         resolve(true);
@@ -59,13 +62,13 @@ function printUSB(data) {
     let device;
 
     try {
-      device = new escpos.USB();
+      device = new USB();
     } catch (err) {
       console.log(`Exception while doing something: ${err}`);
       return reject(new Error("No USB printer found"));
     }
 
-    const printer = new escpos.Printer(device);
+    const printer = new Printer(device);
 
     device.open(function (err) {
       if (err) return reject(err);
@@ -80,7 +83,7 @@ function printUSB(data) {
 
 function sendTCP(host, port, data) {
   return new Promise((resolve, reject) => {
-    const client = new net.Socket();
+    const client = new Socket();
 
     // Timeout 5 seconds
     client.setTimeout(5000);
