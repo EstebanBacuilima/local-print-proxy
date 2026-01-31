@@ -61,6 +61,7 @@ function printUSB(data) {
     try {
       device = new escpos.USB();
     } catch (err) {
+      console.log(`Exception while doing something: ${err}`);
       return reject(new Error("No USB printer found"));
     }
 
